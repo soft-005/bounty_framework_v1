@@ -44,3 +44,9 @@ next-env.d.ts
 .claude/
 CLAUDE.md
 tmpclaude*
+
+# workspace temp data
+.tmp/
+
+# keep .env.example but ignore actual .env
+!.env.example

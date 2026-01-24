@@ -1,4 +1,4 @@
-# bounty_framework_v1
+# KSA_BugBounty_framework_v1
 
 ## Getting Started
 
