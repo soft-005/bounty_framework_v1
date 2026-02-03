@@ -1,4 +1,4 @@
-import { Workspace, WorkspaceState, WorkspaceMeta, Target, Note, WorkspaceSettings } from '@/app/types';
+import { Workspace, WorkspaceState, WorkspaceMeta, Target, Note, WorkspaceSettings, VulnerabilityReport, EnhancedLogEntry } from '@/app/types';
 
 // Default settings for new workspaces
 const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -169,6 +169,8 @@ export async function createWorkspaceAsync(name: string): Promise<Workspace> {
     activeTargetId: null,
     targets: [],
     notes: [],
+    reports: [],
+    logs: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 
@@ -193,6 +195,8 @@ export function createWorkspace(name: string): Workspace {
     activeTargetId: null,
     targets: [],
     notes: [],
+    reports: [],
+    logs: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 
@@ -324,6 +328,98 @@ export function deleteNote(workspaceId: string, noteId: string): void {
 
   workspace.notes = workspace.notes.filter(n => n.id !== noteId);
   saveWorkspace(workspace);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REPORT OPERATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function addReport(workspaceId: string, report: VulnerabilityReport): VulnerabilityReport {
+  const workspace = loadWorkspace(workspaceId);
+  if (!workspace) throw new Error('Workspace not found');
+
+  // Initialize reports array if it doesn't exist (for backwards compatibility)
+  if (!workspace.reports) {
+    workspace.reports = [];
+  }
+
+  workspace.reports.unshift(report);
+  saveWorkspace(workspace);
+  return report;
+}
+
+export function updateReport(workspaceId: string, reportId: string, updates: Partial<VulnerabilityReport>): void {
+  const workspace = loadWorkspace(workspaceId);
+  if (!workspace) throw new Error('Workspace not found');
+
+  if (!workspace.reports) {
+    workspace.reports = [];
+    return;
+  }
+
+  const reportIndex = workspace.reports.findIndex(r => r.id === reportId);
+  if (reportIndex < 0) throw new Error('Report not found');
+
+  workspace.reports[reportIndex] = {
+    ...workspace.reports[reportIndex],
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+  saveWorkspace(workspace);
+}
+
+export function deleteReport(workspaceId: string, reportId: string): void {
+  const workspace = loadWorkspace(workspaceId);
+  if (!workspace) throw new Error('Workspace not found');
+
+  if (!workspace.reports) return;
+
+  workspace.reports = workspace.reports.filter(r => r.id !== reportId);
+  saveWorkspace(workspace);
+}
+
+export function getReports(workspaceId: string): VulnerabilityReport[] {
+  const workspace = loadWorkspace(workspaceId);
+  if (!workspace) return [];
+  return workspace.reports || [];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOG OPERATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function addLog(workspaceId: string, log: EnhancedLogEntry, maxLogs: number = 100): void {
+  const workspace = loadWorkspace(workspaceId);
+  if (!workspace) return;
+
+  // Initialize logs array if it doesn't exist (for backwards compatibility)
+  if (!workspace.logs) {
+    workspace.logs = [];
+  }
+
+  workspace.logs.push(log);
+
+  // Trim to max logs based on settings
+  const retention = workspace.settings?.logRetention || maxLogs;
+  if (workspace.logs.length > retention) {
+    workspace.logs = workspace.logs.slice(-retention);
+  }
+
+  saveWorkspace(workspace);
+}
+
+export function clearLogs(workspaceId: string): void {
+  const workspace = loadWorkspace(workspaceId);
+  if (!workspace) return;
+
+  workspace.logs = [];
+  saveWorkspace(workspace);
+}
+
+export function getLogs(workspaceId: string): EnhancedLogEntry[] {
+  const workspace = loadWorkspace(workspaceId);
+  if (!workspace) return [];
+  return workspace.logs || [];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

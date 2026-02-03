@@ -52,7 +52,8 @@ RUN apk add --no-cache \
     jq \
     ca-certificates \
     tzdata \
-    libpcap
+    libpcap \
+    netcat-openbsd
 
 # Copy Go binaries from builder
 COPY --from=go-builder /go/bin/subfinder /usr/local/bin/

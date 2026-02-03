@@ -150,16 +150,30 @@ const initialState: ExecutionState = {
 export function useExecution(maxConcurrent: number = 5) {
   const [state, dispatch] = useReducer(executionReducer, initialState);
   const eventSourcesRef = useRef<Map<string, EventSource>>(new Map());
+  const processedJobsRef = useRef<Set<string>>(new Set());
+  const timeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const stateRef = useRef(state);
+
+  // Keep stateRef in sync with state
+  stateRef.current = state;
 
   // Process queue when running jobs change
   useEffect(() => {
     const processQueue = async () => {
+      // Get current state from ref to avoid stale closures
+      const currentState = stateRef.current;
+
       // Get jobs from queue that can start
-      const availableSlots = maxConcurrent - state.running.size;
-      const jobsToStart = state.queue.slice(0, availableSlots);
+      const availableSlots = maxConcurrent - currentState.running.size;
+      const jobsToStart = currentState.queue
+        .filter(id => !processedJobsRef.current.has(id))
+        .slice(0, availableSlots);
 
       for (const jobId of jobsToStart) {
-        const job = state.jobs.get(jobId);
+        // Mark as processed immediately to prevent duplicate processing
+        processedJobsRef.current.add(jobId);
+
+        const job = currentState.jobs.get(jobId);
         if (!job) continue;
 
         try {
@@ -180,6 +194,22 @@ export function useExecution(maxConcurrent: number = 5) {
             // Connect to SSE stream
             const es = new EventSource(`/api/execute/${jobId}`);
 
+            // Add timeout to prevent hanging connections (5 minutes)
+            const timeoutId = setTimeout(() => {
+              if (eventSourcesRef.current.has(jobId)) {
+                es.close();
+                eventSourcesRef.current.delete(jobId);
+                timeoutsRef.current.delete(jobId);
+                dispatch({
+                  type: 'COMPLETE_JOB',
+                  jobId,
+                  exitCode: -1,
+                  status: 'failed',
+                });
+              }
+            }, 300000);
+            timeoutsRef.current.set(jobId, timeoutId);
+
             es.addEventListener('output', (event) => {
               const data = JSON.parse(event.data);
               dispatch({ type: 'UPDATE_OUTPUT', jobId, line: data.line });
@@ -187,6 +217,12 @@ export function useExecution(maxConcurrent: number = 5) {
 
             es.addEventListener('complete', (event) => {
               const data = JSON.parse(event.data);
+              // Clear timeout
+              const timeout = timeoutsRef.current.get(jobId);
+              if (timeout) {
+                clearTimeout(timeout);
+                timeoutsRef.current.delete(jobId);
+              }
               dispatch({
                 type: 'COMPLETE_JOB',
                 jobId,
@@ -198,6 +234,12 @@ export function useExecution(maxConcurrent: number = 5) {
             });
 
             es.addEventListener('error', () => {
+              // Clear timeout
+              const timeout = timeoutsRef.current.get(jobId);
+              if (timeout) {
+                clearTimeout(timeout);
+                timeoutsRef.current.delete(jobId);
+              }
               dispatch({
                 type: 'COMPLETE_JOB',
                 jobId,
@@ -239,13 +281,16 @@ export function useExecution(maxConcurrent: number = 5) {
     if (state.queue.length > 0 && state.running.size < maxConcurrent) {
       processQueue();
     }
-  }, [state.queue, state.running.size, state.jobs, maxConcurrent]);
+  }, [state.queue.length, state.running.size, maxConcurrent]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       eventSourcesRef.current.forEach((es) => es.close());
       eventSourcesRef.current.clear();
+      timeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+      timeoutsRef.current.clear();
+      processedJobsRef.current.clear();
     };
   }, []);
 
@@ -278,6 +323,13 @@ export function useExecution(maxConcurrent: number = 5) {
       eventSourcesRef.current.delete(jobId);
     }
 
+    // Clear timeout
+    const timeout = timeoutsRef.current.get(jobId);
+    if (timeout) {
+      clearTimeout(timeout);
+      timeoutsRef.current.delete(jobId);
+    }
+
     // Call API to cancel
     try {
       await fetch(`/api/execute?jobId=${jobId}`, { method: 'DELETE' });
@@ -287,6 +339,31 @@ export function useExecution(maxConcurrent: number = 5) {
 
     dispatch({ type: 'CANCEL_JOB', jobId });
   }, []);
+
+  // Cancel all running and queued jobs
+  const cancelAllRunning = useCallback(async () => {
+    const jobsToCancel = Array.from(state.jobs.values()).filter(
+      (job) => job.status === 'running' || job.status === 'queued'
+    );
+
+    for (const job of jobsToCancel) {
+      // Close SSE connection
+      const es = eventSourcesRef.current.get(job.id);
+      if (es) {
+        es.close();
+        eventSourcesRef.current.delete(job.id);
+      }
+
+      // Call API to cancel
+      try {
+        await fetch(`/api/execute?jobId=${job.id}`, { method: 'DELETE' });
+      } catch {
+        // Ignore errors
+      }
+
+      dispatch({ type: 'CANCEL_JOB', jobId: job.id });
+    }
+  }, [state.jobs]);
 
   // Clear completed jobs
   const clearCompleted = useCallback(() => {
@@ -333,6 +410,7 @@ export function useExecution(maxConcurrent: number = 5) {
     maxConcurrent,
     startExecution,
     cancelExecution,
+    cancelAllRunning,
     clearCompleted,
     clearJob,
     getJob,

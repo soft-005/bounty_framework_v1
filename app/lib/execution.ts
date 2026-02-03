@@ -14,6 +14,8 @@ const ALLOWED_TOOLS = [
   'metabigor', 'git', 'python', 'python3', 'pip', 'pip3',
   // Common utilities
   'curl', 'wget', 'dig', 'nslookup', 'whois', 'host',
+  // Networking tools
+  'nc', 'ncat', 'netcat',
 ];
 
 // Validate command against allowed tools

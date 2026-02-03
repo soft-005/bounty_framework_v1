@@ -6,78 +6,144 @@ import {
 } from '@/app/types';
 
 // Default checklist items for vulnerability reporting
+// Based on real-world HackerOne/Intigriti/Bugcrowd best practices
 export const DEFAULT_CHECKLIST: Omit<ReportChecklistItem, 'id' | 'completed'>[] = [
-  // Basic information
+  // 1. PRE-SUBMISSION - Verify before starting report
   {
-    label: 'Title/Summary',
-    description: 'Clear, concise title describing the vulnerability',
+    label: 'Target is in scope',
+    description: 'Domain, app, API, version verified against program policy',
     required: true,
-    category: 'basic',
+    category: 'pre-submission',
   },
   {
-    label: 'Vulnerability Type',
-    description: 'Classification (XSS, SQLi, IDOR, etc.)',
+    label: 'Vulnerability type allowed',
+    description: 'Check program policy for excluded vulnerability types',
     required: true,
-    category: 'basic',
+    category: 'pre-submission',
   },
   {
-    label: 'Severity Assessment',
-    description: 'Impact level with CVSS or custom rating',
+    label: 'Safe harbor rules followed',
+    description: 'No unauthorized access, no real user data accessed',
     required: true,
-    category: 'basic',
-  },
-  // Technical details
-  {
-    label: 'Affected Endpoint/Component',
-    description: 'Specific URL, parameter, or component affected',
-    required: true,
-    category: 'technical',
+    category: 'pre-submission',
   },
   {
-    label: 'Steps to Reproduce',
-    description: 'Clear, numbered steps to replicate the issue',
-    required: true,
-    category: 'technical',
-  },
-  {
-    label: 'Request/Response Details',
-    description: 'HTTP request/response showing the vulnerability',
+    label: 'Duplicate check done',
+    description: 'Searched disclosed reports for similar vulnerabilities',
     required: false,
-    category: 'technical',
+    category: 'pre-submission',
   },
-  // Evidence
+
+  // 2. VALIDATION - Confirm the bug
   {
-    label: 'Proof of Concept',
-    description: 'Working PoC code or payload',
+    label: 'Bug is reproducible',
+    description: 'Works 100% consistently, not a fluke',
+    required: true,
+    category: 'validation',
+  },
+  {
+    label: 'Clean environment test',
+    description: 'Verified in fresh browser/incognito/new account',
+    required: true,
+    category: 'validation',
+  },
+  {
+    label: 'Impact confirmed',
+    description: 'CIA triad impact verified (Confidentiality, Integrity, Availability)',
+    required: true,
+    category: 'validation',
+  },
+
+  // 3. EVIDENCE - Collect proof
+  {
+    label: 'Proof of Concept ready',
+    description: 'Minimal steps, clear payloads, no fluff',
     required: true,
     category: 'evidence',
   },
   {
-    label: 'Screenshots/Video',
-    description: 'Visual evidence of the vulnerability',
+    label: 'Screenshots/Video captured',
+    description: 'Shows URL, account role, and result clearly',
     required: false,
     category: 'evidence',
   },
-  // Impact
   {
-    label: 'Impact Description',
-    description: 'What an attacker could achieve',
+    label: 'Request/Response logged',
+    description: 'HTTP method, endpoint, headers, body, response (via Burp/curl)',
     required: true,
-    category: 'impact',
+    category: 'evidence',
+  },
+
+  // 4. REPORT WRITING - Craft the submission
+  {
+    label: 'Title is clear and impactful',
+    description: 'Short, precise, includes impact (e.g., "IDOR allows viewing other users invoices")',
+    required: true,
+    category: 'writing',
   },
   {
-    label: 'Business Impact',
-    description: 'Potential damage to the organization',
-    required: false,
-    category: 'impact',
+    label: 'Summary written (2-4 sentences)',
+    description: 'What the bug is, who is affected, why it matters',
+    required: true,
+    category: 'writing',
   },
   {
-    label: 'Remediation Suggestion',
-    description: 'Recommended fix or mitigation',
+    label: 'Steps to Reproduce numbered',
+    description: 'Copy-paste friendly, assume triager is busy',
+    required: true,
+    category: 'writing',
+  },
+  {
+    label: 'Impact section complete',
+    description: 'Real-world consequence, business risk, what attacker could do at scale',
+    required: true,
+    category: 'writing',
+  },
+  {
+    label: 'Suggested fix added',
+    description: 'Authorization check, input sanitization, rate limiting, etc.',
     required: false,
-    category: 'impact',
+    category: 'writing',
+  },
+
+  // 5. SUBMISSION HYGIENE - Polish before submit
+  {
+    label: 'Tone is professional',
+    description: 'Polite, neutral, no threats or bragging',
+    required: true,
+    category: 'hygiene',
+  },
+  {
+    label: 'Tokens/passwords redacted',
+    description: 'Use REDACTED_TOKEN placeholders for sensitive data',
+    required: true,
+    category: 'hygiene',
+  },
+
+  // 6. FINAL CHECKS - Golden rules
+  {
+    label: 'Can reproduce in 5 minutes?',
+    description: 'Steps are clear enough for quick verification',
+    required: true,
+    category: 'final',
+  },
+  {
+    label: 'Impact obvious to non-security person?',
+    description: 'Business risk explained without jargon',
+    required: true,
+    category: 'final',
   },
 ];
+
+// Checklist category display names and order
+export const CHECKLIST_CATEGORIES = [
+  { id: 'pre-submission', label: 'Pre-Submission', description: 'Verify before starting' },
+  { id: 'validation', label: 'Validation', description: 'Confirm the bug' },
+  { id: 'evidence', label: 'Evidence', description: 'Collect proof' },
+  { id: 'writing', label: 'Report Writing', description: 'Craft the submission' },
+  { id: 'hygiene', label: 'Submission Hygiene', description: 'Polish before submit' },
+  { id: 'final', label: 'Final Checks', description: 'Golden rules' },
+] as const;
 
 // Vulnerability types for selection
 export const VULNERABILITY_TYPES = [
@@ -283,4 +349,67 @@ export function generateExportFilename(report: VulnerabilityReport): string {
     .replace(/[^a-z0-9]+/g, '-')
     .slice(0, 50);
   return `report-${title || 'untitled'}-${date}.md`;
+}
+
+// Export report to Python script input format (notes.txt)
+// This format is consumed by report_generator.py
+export function exportToPythonFormat(
+  report: VulnerabilityReport,
+  linkedNotes: Note[] = [],
+  targetDomain?: string
+): string {
+  const vulnType = VULNERABILITY_TYPES.find((v) => v.id === report.vulnerabilityType);
+  const lines: string[] = [];
+
+  // Title line
+  lines.push(report.title || 'Untitled Report');
+
+  // Vulnerability type
+  lines.push(vulnType?.label || report.vulnerabilityType || 'Unknown');
+
+  // Target domain
+  lines.push(targetDomain || 'N/A');
+
+  // Severity
+  lines.push(SEVERITY_DEFINITIONS[report.severity].label);
+
+  // Description
+  lines.push('---DESCRIPTION---');
+  lines.push(report.description || 'No description provided');
+
+  // Steps to reproduce
+  lines.push('---STEPS---');
+  lines.push(report.stepsToReproduce || 'No steps provided');
+
+  // Impact
+  lines.push('---IMPACT---');
+  lines.push(report.impact || 'No impact assessment provided');
+
+  // Remediation
+  if (report.remediation) {
+    lines.push('---REMEDIATION---');
+    lines.push(report.remediation);
+  }
+
+  // Linked notes as evidence
+  if (linkedNotes.length > 0) {
+    lines.push('---EVIDENCE---');
+    linkedNotes.forEach((note) => {
+      lines.push(`[${note.title}]`);
+      lines.push(note.content);
+      lines.push('');
+    });
+  }
+
+  return lines.join('\n');
+}
+
+// Generate filename for Python format export
+export function generatePythonExportFilename(report: VulnerabilityReport): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const title = report.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, 30);
+  return `notes-${title || 'untitled'}-${date}.txt`;
 }

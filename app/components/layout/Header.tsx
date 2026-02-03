@@ -1,12 +1,17 @@
 'use client';
 
-import { IconSearch, IconBug, IconShield } from '@/app/components/ui/icons';
+import { IconBug, IconShield, IconStop, IconLoader } from '@/app/components/ui/icons';
 
 interface HeaderProps {
   title: string;
+  runningCount?: number;
+  queuedCount?: number;
+  onStopAll?: () => void;
 }
 
-export function Header({ title }: HeaderProps) {
+export function Header({ title, runningCount = 0, queuedCount = 0, onStopAll }: HeaderProps) {
+  const totalActive = runningCount + queuedCount;
+
   return (
     <header className="h-[56px] border-b border-[var(--border)] bg-[var(--navy-900)]/80 backdrop-blur-sm flex items-center justify-between px-6 sticky top-0 z-40">
       <div className="flex items-center gap-4">
@@ -20,18 +25,30 @@ export function Header({ title }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Search */}
-        <div className="relative">
-          <IconSearch
-            size={18}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--foreground-dim)]"
-          />
-          <input
-            type="text"
-            placeholder="Search tools..."
-            className="input pl-10 py-2 w-64 bg-[var(--navy-800)] text-sm"
-          />
-        </div>
+        {/* Running Jobs Indicator & Stop All Button */}
+        {totalActive > 0 && (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <IconLoader size={14} className="text-[var(--cyan-glow)]" />
+              <span className="text-[var(--foreground-muted)]">
+                <span className="font-semibold text-[var(--cyan-bright)]">{runningCount}</span> running
+                {queuedCount > 0 && (
+                  <span className="ml-1">
+                    / <span className="font-semibold text-[var(--amber-warning)]">{queuedCount}</span> queued
+                  </span>
+                )}
+              </span>
+            </div>
+            <button
+              onClick={onStopAll}
+              className="btn btn-danger py-1.5 px-3 text-xs flex items-center gap-1.5"
+              title="Stop all running and queued commands"
+            >
+              <IconStop size={12} />
+              Stop All
+            </button>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="flex items-center gap-6 text-sm">

@@ -80,6 +80,8 @@ export interface Workspace {
   activeTargetId: string | null;
   targets: Target[];
   notes: Note[];
+  reports: VulnerabilityReport[];
+  logs: EnhancedLogEntry[];
   settings: WorkspaceSettings;
 }
 
@@ -136,7 +138,16 @@ export interface ExecutionState {
 }
 
 // Reporting types
-export type ReportChecklistCategory = 'basic' | 'technical' | 'evidence' | 'impact';
+export type ReportChecklistCategory =
+  | 'basic'
+  | 'technical'
+  | 'evidence'
+  | 'impact'
+  | 'pre-submission'
+  | 'validation'
+  | 'writing'
+  | 'hygiene'
+  | 'final';
 
 export interface ReportChecklistItem {
   id: string;

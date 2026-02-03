@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "activeTarget": null,
+  "targets": [],
+  "recentTools": [],
+  "settings": {
+    "theme": "dark",
+    "autoSave": true,
+    "logRetention": 100
+  }
+}

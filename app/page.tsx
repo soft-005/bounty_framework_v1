@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { ViewMode, EnhancedLogEntry, Note, Tool, Workspace, WorkspaceMeta, Target, WorkspaceSettings, VulnerabilityReport } from '@/app/types';
 import { Sidebar } from '@/app/components/layout/Sidebar';
 import { Header } from '@/app/components/layout/Header';
@@ -26,6 +26,11 @@ import {
   addNote,
   updateNote,
   deleteNote,
+  addReport,
+  updateReport as updateReportInWorkspace,
+  deleteReport as deleteReportFromWorkspace,
+  addLog as addLogToWorkspace,
+  clearLogs as clearLogsInWorkspace,
   generateId,
   setCachedState,
   setCachedWorkspace,
@@ -53,6 +58,9 @@ export default function Home() {
   // Reports state (stored per workspace)
   const [reports, setReports] = useState<VulnerabilityReport[]>([]);
 
+  // Track which jobs have been logged to prevent duplicate logging
+  const loggedJobsRef = useRef<Set<string>>(new Set());
+
   // Execution hook for parallel tool execution (max 5 concurrent)
   const {
     jobs,
@@ -60,6 +68,7 @@ export default function Home() {
     queuedCount,
     startExecution,
     cancelExecution,
+    cancelAllRunning,
     clearCompleted,
     getActiveJobForTool,
     getJobsForTool,
@@ -69,6 +78,15 @@ export default function Home() {
   const activeTarget = activeWorkspace?.targets.find(t => t.id === activeWorkspace.activeTargetId) || null;
   const notes = activeWorkspace?.notes || [];
   const settings = activeWorkspace?.settings || { theme: 'dark', autoSave: true, logRetention: 100 };
+
+  // Apply theme when settings change
+  useEffect(() => {
+    if (settings.theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  }, [settings.theme]);
 
   // Load workspace state on mount (client-side only)
   useEffect(() => {
@@ -82,6 +100,9 @@ export default function Home() {
         if (workspace) {
           setCachedWorkspace(workspace);
           setActiveWorkspace(workspace);
+          // Load reports and logs from workspace
+          setReports(workspace.reports || []);
+          setLogs(workspace.logs || []);
         }
       }
 
@@ -107,27 +128,6 @@ export default function Home() {
     loadData();
   }, []);
 
-  // Log execution job status changes
-  useEffect(() => {
-    jobs.forEach((job) => {
-      if (job.status === 'completed' || job.status === 'failed') {
-        const duration = job.endTime && job.startTime
-          ? new Date(job.endTime).getTime() - new Date(job.startTime).getTime()
-          : 0;
-
-        addLog(
-          job.status === 'completed' ? 'success' : 'error',
-          job.toolName,
-          `Execution ${job.status}: ${job.command}`,
-          job.id,
-          job.command,
-          job.exitCode,
-          duration
-        );
-      }
-    });
-  }, [jobs]);
-
   // ═══════════════════════════════════════════════════════════════════════════
   // WORKSPACE HANDLERS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -137,6 +137,9 @@ export default function Home() {
     if (workspace) {
       setCachedWorkspace(workspace);
       setActiveWorkspace(workspace);
+      // Load reports and logs from the new workspace
+      setReports(workspace.reports || []);
+      setLogs(workspace.logs || []);
       const state = await loadWorkspaceStateAsync();
       state.activeWorkspaceId = id;
       await saveWorkspaceStateAsync(state);
@@ -227,6 +230,9 @@ export default function Home() {
   const handleDeleteTarget = useCallback((id: string) => {
     if (!activeWorkspace) return;
     deleteTarget(activeWorkspace.id, id);
+    // Remove reports for deleted target
+    const reportsToKeep = reports.filter(r => r.targetId !== id);
+    setReports(reportsToKeep);
     setActiveWorkspace(prev => {
       if (!prev) return null;
       const newTargets = prev.targets.filter(t => t.id !== id);
@@ -235,14 +241,13 @@ export default function Home() {
         targets: newTargets,
         activeTargetId: prev.activeTargetId === id ? (newTargets[0]?.id || null) : prev.activeTargetId,
         notes: prev.notes.filter(n => n.targetId !== id),
+        reports: (prev.reports || []).filter(r => r.targetId !== id),
       };
     });
     setWorkspaces(prev => prev.map(w =>
       w.id === activeWorkspace.id ? { ...w, targetCount: Math.max(0, w.targetCount - 1) } : w
     ));
-    // Also remove reports for deleted target
-    setReports(prev => prev.filter(r => r.targetId !== id));
-  }, [activeWorkspace]);
+  }, [activeWorkspace, reports]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // NOTE HANDLERS
@@ -300,16 +305,34 @@ export default function Home() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   const handleCreateReport = useCallback((report: VulnerabilityReport) => {
+    if (!activeWorkspace) return;
+    addReport(activeWorkspace.id, report);
     setReports(prev => [report, ...prev]);
-  }, []);
+    // Update workspace state
+    setActiveWorkspace(prev => prev ? { ...prev, reports: [report, ...(prev.reports || [])] } : null);
+  }, [activeWorkspace]);
 
   const handleUpdateReport = useCallback((report: VulnerabilityReport) => {
+    if (!activeWorkspace) return;
+    updateReportInWorkspace(activeWorkspace.id, report.id, report);
     setReports(prev => prev.map(r => r.id === report.id ? report : r));
-  }, []);
+    // Update workspace state
+    setActiveWorkspace(prev => prev ? {
+      ...prev,
+      reports: (prev.reports || []).map(r => r.id === report.id ? report : r)
+    } : null);
+  }, [activeWorkspace]);
 
   const handleDeleteReport = useCallback((reportId: string) => {
+    if (!activeWorkspace) return;
+    deleteReportFromWorkspace(activeWorkspace.id, reportId);
     setReports(prev => prev.filter(r => r.id !== reportId));
-  }, []);
+    // Update workspace state
+    setActiveWorkspace(prev => prev ? {
+      ...prev,
+      reports: (prev.reports || []).filter(r => r.id !== reportId)
+    } : null);
+  }, [activeWorkspace]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // SETTINGS HANDLERS
@@ -326,7 +349,7 @@ export default function Home() {
   // TOOL EXECUTION
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const addLog = useCallback((
+  const addLogEntry = useCallback((
     level: EnhancedLogEntry['level'],
     tool: string,
     message: string,
@@ -347,14 +370,43 @@ export default function Home() {
       duration,
     };
     setLogs((prev) => [...prev.slice(-(settings.logRetention - 1)), newLog]);
-  }, [settings.logRetention]);
+    // Persist to workspace
+    if (activeWorkspace) {
+      addLogToWorkspace(activeWorkspace.id, newLog, settings.logRetention);
+    }
+  }, [settings.logRetention, activeWorkspace]);
+
+  // Log execution job status changes (only once per job)
+  useEffect(() => {
+    jobs.forEach((job) => {
+      if ((job.status === 'completed' || job.status === 'failed') &&
+          !loggedJobsRef.current.has(job.id)) {
+        // Mark as logged to prevent duplicate entries
+        loggedJobsRef.current.add(job.id);
+
+        const duration = job.endTime && job.startTime
+          ? new Date(job.endTime).getTime() - new Date(job.startTime).getTime()
+          : 0;
+
+        addLogEntry(
+          job.status === 'completed' ? 'success' : 'error',
+          job.toolName,
+          `Execution ${job.status}: ${job.command}`,
+          job.id,
+          job.command,
+          job.exitCode,
+          duration
+        );
+      }
+    });
+  }, [jobs, addLogEntry]);
 
   const handleExecute = useCallback(
     (command: string, tool: Tool) => {
       // Use the execution hook for real parallel execution
       const job = startExecution(command, tool, activeTarget?.id);
 
-      addLog('info', tool.name, `Started execution: ${command}`, job.id, command);
+      addLogEntry('info', tool.name, `Started execution: ${command}`, job.id, command);
       setIsExecuting(true);
       setCurrentCommand(command);
 
@@ -366,7 +418,7 @@ export default function Home() {
         }
       }, 100);
     },
-    [startExecution, addLog, activeTarget, runningCount]
+    [startExecution, addLogEntry, activeTarget, runningCount]
   );
 
   const handleCancelExecution = useCallback(
@@ -374,15 +426,20 @@ export default function Home() {
       cancelExecution(jobId);
       const job = jobs.find(j => j.id === jobId);
       if (job) {
-        addLog('warning', job.toolName, `Execution cancelled: ${job.command}`, jobId, job.command);
+        addLogEntry('warning', job.toolName, `Execution cancelled: ${job.command}`, jobId, job.command);
       }
     },
-    [cancelExecution, jobs, addLog]
+    [cancelExecution, jobs, addLogEntry]
   );
 
   const handleClearLogs = useCallback(() => {
     setLogs([]);
-  }, []);
+    // Persist to workspace
+    if (activeWorkspace) {
+      clearLogsInWorkspace(activeWorkspace.id);
+      setActiveWorkspace(prev => prev ? { ...prev, logs: [] } : null);
+    }
+  }, [activeWorkspace]);
 
   // Prevent hydration mismatch by showing loading state until client-side mounted
   if (!mounted) {
@@ -417,7 +474,12 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="ml-[260px] min-h-screen flex flex-col">
-        <Header title={VIEW_TITLES[activeView]} />
+        <Header
+          title={VIEW_TITLES[activeView]}
+          runningCount={runningCount}
+          queuedCount={queuedCount}
+          onStopAll={cancelAllRunning}
+        />
 
         {/* Execution Banner - shows when tools are running */}
         <ExecutionBanner

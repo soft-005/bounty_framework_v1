@@ -1,36 +1,201 @@
-# KSA_BugBounty_framework_v1
+# KSA Bug Bounty Framework
 
-## Getting Started
+A full-featured reconnaissance, vulnerability tracking, and reporting system for bug bounty hunters.
 
-First, run the development server:
+## Features
+
+- **Workspace Management** - Organize targets and findings by project/engagement
+- **Target Tracking** - Define scope, wildcards, and out-of-scope areas
+- **Security Tool Execution** - Run 20+ security tools with real-time output
+- **Parallel Execution** - Up to 5 concurrent tool runs with status tracking
+- **Note Taking** - Persistent notes per target with tagging
+- **Vulnerability Reporting** - Comprehensive checklist-based reports
+- **Multiple Export Formats** - Markdown and Python script input formats
+
+## Quick Start
+
+### Development Mode
 
 ```bash
+# Install dependencies
+npm install
+
+# Start development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# Open http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Docker Deployment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Navigate to docker directory
+cd docker
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Start all containers
+docker-compose up -d
 
-## Learn More
+# View logs
+docker-compose logs -f
 
-To learn more about Next.js, take a look at the following resources:
+# Stop containers
+docker-compose down
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Technology Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Frontend**: Next.js 16, React 19, TypeScript
+- **Styling**: Tailwind CSS v4
+- **Backend**: Next.js API Routes, Server-Sent Events
+- **Containerization**: Docker, Docker Compose
+- **Security Tools**: Go-based tools (subfinder, httpx, nuclei, etc.)
 
-## Deploy on Vercel
+## Integrated Security Tools
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Reconnaissance & Asset Discovery
+- Amass - Advanced attack surface mapping
+- Subfinder - Fast subdomain enumeration
+- Assetfinder - Find related assets
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### DNS & Domain Intelligence
+- DNSx - Multi-purpose DNS toolkit
+- ShuffleDNS - Mass DNS resolver
+
+### Web Scanning & Crawling
+- httpx - HTTP toolkit for probing
+- Katana - Fast web crawler
+- GoSpider - Web spider
+- GAU - Get All URLs
+- Nuclei - Vulnerability scanner
+
+### Content Discovery
+- FFuf - Fast web fuzzer
+- CeWL - Custom wordlist generator
+
+### Port & Service Scanning
+- Naabu - Fast port scanner
+- Nmap - Network scanner
+
+### Networking Utilities
+- Netcat (nc/ncat) - Network utility
+- curl, wget - HTTP clients
+
+## Project Structure
+
+```
+app/
+├── api/                      # API routes
+│   ├── execute/              # Command execution
+│   └── workspace/            # Workspace management
+├── components/
+│   ├── panels/               # Main UI panels
+│   │   ├── ToolsPanel        # Tool execution
+│   │   ├── LogsPanel         # Command logs
+│   │   ├── NotesPanel        # Note taking
+│   │   └── ReportingPanel    # Vulnerability reports
+│   ├── layout/               # Layout components
+│   └── ui/                   # Reusable UI components
+├── hooks/                    # React hooks
+├── lib/                      # Utility libraries
+└── types/                    # TypeScript definitions
+
+docker/
+├── Dockerfile                # Security tools container
+├── Dockerfile.web            # Web app container
+├── docker-compose.yml        # Service orchestration
+└── entrypoint.sh             # Command wrapper
+
+scripts/
+└── report_generator.py       # Python report generator
+```
+
+## Reporting System
+
+The reporting system follows real-world HackerOne/Intigriti/Bugcrowd best practices with a comprehensive checklist:
+
+### Checklist Categories
+
+1. **Pre-Submission** - Verify target scope and program rules
+2. **Validation** - Confirm bug reproducibility and impact
+3. **Evidence** - Collect PoC, screenshots, request/response
+4. **Report Writing** - Clear title, summary, steps, impact
+5. **Submission Hygiene** - Professional tone, redacted tokens
+6. **Final Checks** - Quick reproduction, clear impact
+
+### Export Formats
+
+- **Markdown** - Full report with metadata
+- **Python Format** - Input for CLI report generator
+
+### Python Report Generator
+
+```bash
+# Generate report from notes
+python scripts/report_generator.py notes.txt
+
+# Save to file
+python scripts/report_generator.py notes.txt -o report.md
+```
+
+## Workflow
+
+1. **Create Workspace** - New project/engagement
+2. **Add Targets** - Define domain and scope
+3. **Run Recon Tools** - Enumerate subdomains, ports, endpoints
+4. **Take Notes** - Document findings
+5. **Create Report** - Use checklist to ensure completeness
+6. **Export** - Generate submission-ready report
+
+## Security
+
+- Commands validated against allowlist
+- Shell injection prevention
+- Non-root Docker users
+- Network isolation
+
+## Allowed Commands
+
+```
+amass, subfinder, assetfinder, dnsx, shuffledns,
+httpx, nuclei, katana, ffuf, gau, gospider,
+naabu, cloud_enum, cewl, subdomainizer, masscan,
+metabigor, git, python, python3, pip, pip3,
+curl, wget, dig, nslookup, whois, host,
+nc, ncat, netcat
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NODE_ENV` | Environment mode | development |
+| `PORT` | Application port | 3000 |
+| `TOOLS_CONTAINER` | Docker tools container name | ksa-tools |
+
+### Workspace Storage
+
+Workspaces are stored in `.tmp/workspaces/` as JSON files containing:
+- Target definitions
+- Notes
+- Reports
+- Settings
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit changes
+4. Push to the branch
+5. Open a Pull Request
+
+## License
+
+MIT
+
+## Acknowledgments
+
+- [ProjectDiscovery](https://projectdiscovery.io/) for security tools
+- [SecLists](https://github.com/danielmiessler/SecLists) for wordlists
+- Bug bounty community for checklist best practices

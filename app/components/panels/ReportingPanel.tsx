@@ -16,8 +16,11 @@ import {
   isReportReady,
   exportToMarkdown,
   generateExportFilename,
+  exportToPythonFormat,
+  generatePythonExportFilename,
   VULNERABILITY_TYPES,
   SEVERITY_DEFINITIONS,
+  CHECKLIST_CATEGORIES,
 } from '@/app/lib/reporting';
 
 interface ReportingPanelProps {
@@ -112,6 +115,27 @@ export function ReportingPanel({
     const filename = generateExportFilename(selectedReport);
 
     const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [selectedReport, notes, activeTarget]);
+
+  const handleExportPython = useCallback(() => {
+    if (!selectedReport) return;
+    const linkedNotes = notes.filter((n) =>
+      selectedReport.linkedNoteIds.includes(n.id)
+    );
+    const pythonFormat = exportToPythonFormat(
+      selectedReport,
+      linkedNotes,
+      activeTarget?.domain
+    );
+    const filename = generatePythonExportFilename(selectedReport);
+
+    const blob = new Blob([pythonFormat], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -288,7 +312,15 @@ export function ReportingPanel({
                   title="Export to Markdown"
                 >
                   <IconDownload size={14} />
-                  Export
+                  Export MD
+                </button>
+                <button
+                  onClick={handleExportPython}
+                  className="btn btn-ghost py-1.5 px-3 text-sm"
+                  title="Export for Python script (notes.txt)"
+                >
+                  <IconDownload size={14} />
+                  Export Python
                 </button>
                 <button
                   onClick={handleDelete}
@@ -408,47 +440,54 @@ export function ReportingPanel({
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="text-sm font-medium">
-                    Reporting Checklist
+                    Bug Bounty Reporting Checklist
                   </label>
                   <span className="text-xs text-[var(--foreground-dim)]">
                     {getChecklistProgress(selectedReport.checklist)}% complete
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {(['basic', 'technical', 'evidence', 'impact'] as const).map(
-                    (category) => {
-                      const categoryItems = selectedReport.checklist.filter(
-                        (item) => item.category === category
-                      );
-                      if (categoryItems.length === 0) return null;
+                  {CHECKLIST_CATEGORIES.map((cat) => {
+                    const categoryItems = selectedReport.checklist.filter(
+                      (item) => item.category === cat.id
+                    );
+                    if (categoryItems.length === 0) return null;
 
-                      return (
-                        <div
-                          key={category}
-                          className="p-3 rounded-lg bg-[var(--navy-800)] border border-[var(--border)]"
-                        >
-                          <div className="text-xs text-[var(--foreground-dim)] uppercase tracking-wide mb-2">
-                            {category}
+                    const completedCount = categoryItems.filter((i) => i.completed).length;
+
+                    return (
+                      <div
+                        key={cat.id}
+                        className="p-3 rounded-lg bg-[var(--navy-800)] border border-[var(--border)]"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs text-[var(--foreground-dim)] uppercase tracking-wide">
+                            {cat.label}
                           </div>
-                          <div className="space-y-1">
-                            {categoryItems.map((item) => (
-                              <button
-                                key={item.id}
-                                onClick={() => handleToggleChecklistItem(item.id)}
-                                className="w-full flex items-center gap-3 p-2 rounded hover:bg-[var(--navy-700)] transition-colors text-left"
+                          <span className="text-[10px] text-[var(--foreground-dim)]">
+                            {completedCount}/{categoryItems.length}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          {categoryItems.map((item) => (
+                            <button
+                              key={item.id}
+                              onClick={() => handleToggleChecklistItem(item.id)}
+                              className="w-full flex items-center gap-3 p-2 rounded hover:bg-[var(--navy-700)] transition-colors text-left"
+                            >
+                              <div
+                                className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${
+                                  item.completed
+                                    ? 'bg-[var(--green-glow)] border-[var(--green-glow)]'
+                                    : 'border-[var(--navy-500)]'
+                                }`}
                               >
-                                <div
-                                  className={`w-5 h-5 rounded border flex items-center justify-center ${
-                                    item.completed
-                                      ? 'bg-[var(--green-glow)] border-[var(--green-glow)]'
-                                      : 'border-[var(--navy-500)]'
-                                  }`}
-                                >
-                                  {item.completed && (
-                                    <IconCheck size={12} className="text-white" />
-                                  )}
-                                </div>
-                                <div className="flex-1">
+                                {item.completed && (
+                                  <IconCheck size={12} className="text-white" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
                                   <span
                                     className={`text-sm ${
                                       item.completed
@@ -459,18 +498,21 @@ export function ReportingPanel({
                                     {item.label}
                                   </span>
                                   {item.required && !item.completed && (
-                                    <span className="text-[10px] text-[var(--red-glow)] ml-2">
+                                    <span className="text-[10px] text-[var(--red-glow)] shrink-0">
                                       Required
                                     </span>
                                   )}
                                 </div>
-                              </button>
-                            ))}
-                          </div>
+                                <p className="text-[11px] text-[var(--foreground-dim)] truncate">
+                                  {item.description}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
                         </div>
-                      );
-                    }
-                  )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
