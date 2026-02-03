@@ -6,6 +6,7 @@ import {
   IconTools,
   IconLogs,
   IconNotes,
+  IconReport,
   IconSettings,
 } from '@/app/components/ui/icons';
 import { WorkspaceSelector } from './WorkspaceSelector';
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
   { id: 'tools' as ViewMode, label: 'Tools', icon: IconTools },
   { id: 'logs' as ViewMode, label: 'Logs', icon: IconLogs },
   { id: 'notes' as ViewMode, label: 'Notes', icon: IconNotes },
+  { id: 'reports' as ViewMode, label: 'Reports', icon: IconReport },
   { id: 'settings' as ViewMode, label: 'Settings', icon: IconSettings },
 ];
 

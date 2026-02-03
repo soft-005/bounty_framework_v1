@@ -1,13 +1,16 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { ViewMode, LogEntry, Note, Tool, Workspace, WorkspaceMeta, Target, WorkspaceSettings } from '@/app/types';
+import { ViewMode, EnhancedLogEntry, Note, Tool, Workspace, WorkspaceMeta, Target, WorkspaceSettings, VulnerabilityReport } from '@/app/types';
 import { Sidebar } from '@/app/components/layout/Sidebar';
 import { Header } from '@/app/components/layout/Header';
+import { ExecutionBanner } from '@/app/components/layout/ExecutionBanner';
 import { ToolsPanel } from '@/app/components/panels/ToolsPanel';
 import { LogsPanel } from '@/app/components/panels/LogsPanel';
 import { NotesPanel } from '@/app/components/panels/NotesPanel';
+import { ReportingPanel } from '@/app/components/panels/ReportingPanel';
 import { SettingsPanel } from '@/app/components/panels/SettingsPanel';
+import { useExecution } from '@/app/hooks/useExecution';
 import {
   loadWorkspaceStateAsync,
   saveWorkspaceStateAsync,
@@ -32,19 +35,35 @@ const VIEW_TITLES: Record<ViewMode, string> = {
   tools: 'Security Tools',
   logs: 'Execution Logs',
   notes: 'Notes & Findings',
+  reports: 'Vulnerability Reports',
   settings: 'Settings',
 };
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [activeView, setActiveView] = useState<ViewMode>('tools');
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logs, setLogs] = useState<EnhancedLogEntry[]>([]);
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentCommand, setCurrentCommand] = useState<string | undefined>();
 
   // Workspace state
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
+
+  // Reports state (stored per workspace)
+  const [reports, setReports] = useState<VulnerabilityReport[]>([]);
+
+  // Execution hook for parallel tool execution (max 5 concurrent)
+  const {
+    jobs,
+    runningCount,
+    queuedCount,
+    startExecution,
+    cancelExecution,
+    clearCompleted,
+    getActiveJobForTool,
+    getJobsForTool,
+  } = useExecution(5);
 
   // Derived state
   const activeTarget = activeWorkspace?.targets.find(t => t.id === activeWorkspace.activeTargetId) || null;
@@ -87,6 +106,27 @@ export default function Home() {
 
     loadData();
   }, []);
+
+  // Log execution job status changes
+  useEffect(() => {
+    jobs.forEach((job) => {
+      if (job.status === 'completed' || job.status === 'failed') {
+        const duration = job.endTime && job.startTime
+          ? new Date(job.endTime).getTime() - new Date(job.startTime).getTime()
+          : 0;
+
+        addLog(
+          job.status === 'completed' ? 'success' : 'error',
+          job.toolName,
+          `Execution ${job.status}: ${job.command}`,
+          job.id,
+          job.command,
+          job.exitCode,
+          duration
+        );
+      }
+    });
+  }, [jobs]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // WORKSPACE HANDLERS
@@ -200,6 +240,8 @@ export default function Home() {
     setWorkspaces(prev => prev.map(w =>
       w.id === activeWorkspace.id ? { ...w, targetCount: Math.max(0, w.targetCount - 1) } : w
     ));
+    // Also remove reports for deleted target
+    setReports(prev => prev.filter(r => r.targetId !== id));
   }, [activeWorkspace]);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -254,6 +296,22 @@ export default function Home() {
   }, [activeWorkspace]);
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // REPORT HANDLERS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const handleCreateReport = useCallback((report: VulnerabilityReport) => {
+    setReports(prev => [report, ...prev]);
+  }, []);
+
+  const handleUpdateReport = useCallback((report: VulnerabilityReport) => {
+    setReports(prev => prev.map(r => r.id === report.id ? report : r));
+  }, []);
+
+  const handleDeleteReport = useCallback((reportId: string) => {
+    setReports(prev => prev.filter(r => r.id !== reportId));
+  }, []);
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // SETTINGS HANDLERS
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -268,36 +326,58 @@ export default function Home() {
   // TOOL EXECUTION
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const addLog = useCallback((level: LogEntry['level'], tool: string, message: string) => {
-    const newLog: LogEntry = {
+  const addLog = useCallback((
+    level: EnhancedLogEntry['level'],
+    tool: string,
+    message: string,
+    jobId?: string,
+    command?: string,
+    exitCode?: number,
+    duration?: number
+  ) => {
+    const newLog: EnhancedLogEntry = {
       id: generateId(),
       timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
       level,
       tool,
       message,
+      jobId,
+      command,
+      exitCode,
+      duration,
     };
     setLogs((prev) => [...prev.slice(-(settings.logRetention - 1)), newLog]);
   }, [settings.logRetention]);
 
   const handleExecute = useCallback(
     (command: string, tool: Tool) => {
+      // Use the execution hook for real parallel execution
+      const job = startExecution(command, tool, activeTarget?.id);
+
+      addLog('info', tool.name, `Started execution: ${command}`, job.id, command);
       setIsExecuting(true);
       setCurrentCommand(command);
 
-      addLog('info', tool.name, `Starting execution: ${command}`);
-
-      // Simulate execution
-      setTimeout(() => addLog('info', tool.name, 'Initializing...'), 500);
-      setTimeout(() => addLog('info', tool.name, 'Connecting to target...'), 1000);
-      setTimeout(() => addLog('success', tool.name, 'Connection established'), 1500);
-      setTimeout(() => addLog('info', tool.name, 'Processing results...'), 2000);
+      // Clear executing state when no more jobs are running
       setTimeout(() => {
-        addLog('success', tool.name, 'Execution completed successfully');
-        setIsExecuting(false);
-        setCurrentCommand(undefined);
-      }, 2500);
+        if (runningCount === 0) {
+          setIsExecuting(false);
+          setCurrentCommand(undefined);
+        }
+      }, 100);
     },
-    [addLog]
+    [startExecution, addLog, activeTarget, runningCount]
+  );
+
+  const handleCancelExecution = useCallback(
+    (jobId: string) => {
+      cancelExecution(jobId);
+      const job = jobs.find(j => j.id === jobId);
+      if (job) {
+        addLog('warning', job.toolName, `Execution cancelled: ${job.command}`, jobId, job.command);
+      }
+    },
+    [cancelExecution, jobs, addLog]
   );
 
   const handleClearLogs = useCallback(() => {
@@ -339,20 +419,31 @@ export default function Home() {
       <main className="ml-[260px] min-h-screen flex flex-col">
         <Header title={VIEW_TITLES[activeView]} />
 
+        {/* Execution Banner - shows when tools are running */}
+        <ExecutionBanner
+          jobs={jobs}
+          onCancel={handleCancelExecution}
+          onClearCompleted={clearCompleted}
+        />
+
         <div className="flex-1 p-6">
           {activeView === 'tools' && (
             <ToolsPanel
               activeTarget={activeTarget}
               onExecute={handleExecute}
+              onCancel={handleCancelExecution}
+              getActiveJobForTool={getActiveJobForTool}
+              getJobsForTool={getJobsForTool}
             />
           )}
 
           {activeView === 'logs' && (
             <LogsPanel
               logs={logs}
-              isExecuting={isExecuting}
+              isExecuting={isExecuting || runningCount > 0}
               currentCommand={currentCommand}
               onClear={handleClearLogs}
+              activeJobs={jobs}
             />
           )}
 
@@ -361,6 +452,17 @@ export default function Home() {
               notes={notes}
               onSave={handleSaveNote}
               onDelete={handleDeleteNote}
+            />
+          )}
+
+          {activeView === 'reports' && (
+            <ReportingPanel
+              reports={reports}
+              notes={notes}
+              activeTarget={activeTarget}
+              onCreateReport={handleCreateReport}
+              onUpdateReport={handleUpdateReport}
+              onDeleteReport={handleDeleteReport}
             />
           )}
 

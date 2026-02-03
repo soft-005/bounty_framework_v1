@@ -50,3 +50,6 @@ tmpclaude*
 
 # keep .env.example but ignore actual .env
 !.env.example
+
+
+idea*

@@ -1,24 +1,75 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Tool, ToolCategory, Target } from '@/app/types';
+import { Tool, ToolCategory, Target, ExecutionJob } from '@/app/types';
 import { TOOLS, TOOL_CATEGORIES } from '@/app/lib/tools-data';
 import {
   IconPlay,
+  IconStop,
   IconChevronRight,
   IconChevronDown,
   IconSearch,
   IconCopy,
   IconCheck,
   IconGlobe,
+  IconLoader,
 } from '@/app/components/ui/icons';
+import { OutputTerminal } from '@/app/components/ui/OutputTerminal';
 
 interface ToolsPanelProps {
   activeTarget: Target | null;
   onExecute: (command: string, tool: Tool) => void;
+  onCancel?: (jobId: string) => void;
+  getActiveJobForTool?: (toolId: string) => ExecutionJob | undefined;
+  getJobsForTool?: (toolId: string) => ExecutionJob[];
 }
 
-export function ToolsPanel({ activeTarget, onExecute }: ToolsPanelProps) {
+// Status badge component
+function StatusBadge({ status }: { status: ExecutionJob['status'] }) {
+  switch (status) {
+    case 'queued':
+      return (
+        <span className="badge badge-amber text-[10px] py-0 animate-pulse">
+          Queued
+        </span>
+      );
+    case 'running':
+      return (
+        <span className="badge badge-purple text-[10px] py-0 flex items-center gap-1">
+          <IconLoader size={10} />
+          Running
+        </span>
+      );
+    case 'completed':
+      return (
+        <span className="badge badge-green text-[10px] py-0">
+          Done
+        </span>
+      );
+    case 'failed':
+      return (
+        <span className="badge badge-red text-[10px] py-0">
+          Error
+        </span>
+      );
+    case 'cancelled':
+      return (
+        <span className="badge badge-gray text-[10px] py-0">
+          Cancelled
+        </span>
+      );
+    default:
+      return null;
+  }
+}
+
+export function ToolsPanel({
+  activeTarget,
+  onExecute,
+  onCancel,
+  getActiveJobForTool,
+  getJobsForTool,
+}: ToolsPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
@@ -28,6 +79,24 @@ export function ToolsPanel({ activeTarget, onExecute }: ToolsPanelProps) {
   const [copied, setCopied] = useState(false);
 
   const targetDomain = activeTarget?.domain || '';
+
+  // Get active job for selected tool
+  const activeJob = selectedTool && getActiveJobForTool
+    ? getActiveJobForTool(selectedTool.id)
+    : undefined;
+
+  // Get all jobs for selected tool (for history)
+  const toolJobs = selectedTool && getJobsForTool
+    ? getJobsForTool(selectedTool.id)
+    : [];
+
+  // Get most recent completed/failed job for showing output
+  const lastJob = toolJobs.find(
+    (j) => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled'
+  );
+
+  // Show output from active job or last completed job
+  const displayJob = activeJob || lastJob;
 
   const toggleCategory = (category: string) => {
     const next = new Set(expandedCategories);
@@ -90,6 +159,12 @@ export function ToolsPanel({ activeTarget, onExecute }: ToolsPanelProps) {
     }
   };
 
+  const handleCancel = () => {
+    if (activeJob && onCancel) {
+      onCancel(activeJob.id);
+    }
+  };
+
   const openExternalLink = (urlTemplate: string) => {
     const url = urlTemplate.replace(/{target}/g, targetDomain || 'example.com');
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -108,6 +183,13 @@ export function ToolsPanel({ activeTarget, onExecute }: ToolsPanelProps) {
     acc[tool.category].push(tool);
     return acc;
   }, {} as Record<ToolCategory, Tool[]>);
+
+  // Get status for a tool (most recent active job)
+  const getToolStatus = (toolId: string): ExecutionJob['status'] | null => {
+    if (!getActiveJobForTool) return null;
+    const job = getActiveJobForTool(toolId);
+    return job?.status || null;
+  };
 
   return (
     <div className="flex h-full gap-4">
@@ -170,27 +252,32 @@ export function ToolsPanel({ activeTarget, onExecute }: ToolsPanelProps) {
 
                 {isExpanded && (
                   <div className="mt-1 ml-2 space-y-0.5">
-                    {tools.map((tool) => (
-                      <button
-                        key={tool.id}
-                        onClick={() => selectTool(tool)}
-                        className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all ${
-                          selectedTool?.id === tool.id
-                            ? 'bg-[var(--navy-700)] text-[var(--cyan-glow)] border-l-2 border-[var(--cyan-glow)]'
-                            : 'text-[var(--foreground-muted)] hover:bg-[var(--navy-800)] hover:text-[var(--foreground)]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{tool.name}</span>
-                          {tool.type === 'external' && (
-                            <IconGlobe size={12} className="text-[var(--foreground-dim)]" />
-                          )}
-                        </div>
-                        <p className="text-xs text-[var(--foreground-dim)] mt-0.5 line-clamp-1">
-                          {tool.description}
-                        </p>
-                      </button>
-                    ))}
+                    {tools.map((tool) => {
+                      const toolStatus = getToolStatus(tool.id);
+
+                      return (
+                        <button
+                          key={tool.id}
+                          onClick={() => selectTool(tool)}
+                          className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all ${
+                            selectedTool?.id === tool.id
+                              ? 'bg-[var(--navy-700)] text-[var(--cyan-glow)] border-l-2 border-[var(--cyan-glow)]'
+                              : 'text-[var(--foreground-muted)] hover:bg-[var(--navy-800)] hover:text-[var(--foreground)]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{tool.name}</span>
+                            {tool.type === 'external' && (
+                              <IconGlobe size={12} className="text-[var(--foreground-dim)]" />
+                            )}
+                            {toolStatus && <StatusBadge status={toolStatus} />}
+                          </div>
+                          <p className="text-xs text-[var(--foreground-dim)] mt-0.5 line-clamp-1">
+                            {tool.description}
+                          </p>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -217,6 +304,7 @@ export function ToolsPanel({ activeTarget, onExecute }: ToolsPanelProps) {
                     {selectedTool.type === 'external' && (
                       <span className="badge badge-purple">Web Tool</span>
                     )}
+                    {activeJob && <StatusBadge status={activeJob.status} />}
                   </h3>
                   <p className="text-[var(--foreground-muted)] mt-1">
                     {selectedTool.description}
@@ -252,6 +340,7 @@ export function ToolsPanel({ activeTarget, onExecute }: ToolsPanelProps) {
                         onChange={(e) => setCommandInput(e.target.value)}
                         className="input-command w-full pl-12 pr-12 py-3"
                         placeholder="Enter command..."
+                        disabled={activeJob?.status === 'running'}
                       />
                       <button
                         onClick={handleCopy}
@@ -265,12 +354,38 @@ export function ToolsPanel({ activeTarget, onExecute }: ToolsPanelProps) {
                         )}
                       </button>
                     </div>
-                    <button onClick={handleExecute} className="btn btn-primary px-6">
-                      <IconPlay size={16} />
-                      Run
-                    </button>
+                    {activeJob?.status === 'running' || activeJob?.status === 'queued' ? (
+                      <button onClick={handleCancel} className="btn btn-danger px-6">
+                        <IconStop size={16} />
+                        Stop
+                      </button>
+                    ) : (
+                      <button onClick={handleExecute} className="btn btn-primary px-6">
+                        <IconPlay size={16} />
+                        Run
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {/* Output Preview */}
+                {displayJob && (
+                  <div className="p-5 border-b border-[var(--border)]">
+                    <OutputTerminal
+                      lines={displayJob.output}
+                      status={
+                        displayJob.status === 'running'
+                          ? 'running'
+                          : displayJob.status === 'completed'
+                          ? 'completed'
+                          : displayJob.status === 'failed' || displayJob.status === 'cancelled'
+                          ? 'failed'
+                          : 'idle'
+                      }
+                      maxHeight="200px"
+                    />
+                  </div>
+                )}
 
                 {/* Flags */}
                 <div className="flex-1 overflow-y-auto p-5">

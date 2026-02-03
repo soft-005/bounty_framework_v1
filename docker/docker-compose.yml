@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # KSA Web Application (Next.js)
+  ksa-web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    container_name: ksa-web
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - TOOLS_CONTAINER=ksa-tools
+    volumes:
+      - ../.tmp:/app/.tmp
+      - ../output:/app/output
+    depends_on:
+      - ksa-tools
+    restart: unless-stopped
+    networks:
+      - ksa-network
+
+  # KSA Security Tools Container
+  ksa-tools:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ksa-tools
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../.tmp/output:/app/output
+      - ../.tmp/data:/app/data
+      - wordlists:/app/wordlists
+      - nuclei-templates:/root/nuclei-templates
+    cap_add:
+      - NET_RAW  # Required for nmap/naabu
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks:
+      - ksa-network
+    healthcheck:
+      test: ["CMD", "subfinder", "-version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Named volumes for persistence
+volumes:
+  wordlists:
+    driver: local
+  nuclei-templates:
+    driver: local
+
+# Network configuration
+networks:
+  ksa-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
